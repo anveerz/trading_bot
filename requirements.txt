@@ -1,0 +1,27 @@
+# Quality Trading Bot - Essential Dependencies
+# Install with: pip install -r requirements.txt
+
+# WebSocket client for real-time data
+websocket-client>=1.0.0
+
+# Data analysis and manipulation  
+pandas>=1.3.0
+numpy>=1.20.0
+
+# HTTP requests
+requests>=2.25.0
+
+# Telegram bot integration
+python-telegram-bot>=13.0
+
+# Timezone handling
+pytz>=2021.1
+
+# Date/time utilities
+python-dateutil>=2.8.0
+
+# Progress bars for monitoring
+tqdm>=4.64.0
+
+# Optional: Enhanced logging
+colorlog>=6.0.0
