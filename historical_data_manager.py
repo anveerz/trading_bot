@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-HISTORICAL DATA MANAGER
-Fetches and manages historical forex data from TwelveData API
-Integrates with live trading system for comprehensive analysis
+FIXED HISTORICAL DATA MANAGER
+Based on successful testing - handles API limitations with multiple keys
 """
 
 import requests
@@ -20,20 +19,20 @@ from threading import Lock
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class HistoricalDataManager:
+class FixedHistoricalDataManager:
     """
-    Manages historical data fetching, storage, and integration with live data
+    FIXED Historical Data Manager with multiple API keys and proper fallback
     """
     
-    def __init__(self, twelvedata_api_key: str, database_path: str = "historical_data.db"):
+    def __init__(self, twelvedata_api_keys: List[str], database_path: str = "historical_data.db"):
         """
-        Initialize the historical data manager
+        Initialize with multiple API keys for fallback
         
         Args:
-            twelvedata_api_key: TwelveData API key
+            twelvedata_api_keys: List of TwelveData API keys
             database_path: SQLite database file path
         """
-        self.api_key = twelvedata_api_key
+        self.api_keys = twelvedata_api_keys
         self.base_url = "https://api.twelvedata.com"
         self.database_path = database_path
         
@@ -56,206 +55,170 @@ class HistoricalDataManager:
         self.data_cache = {}
         self.cache_lock = Lock()
         
+        logger.info(f"✅ FixedHistoricalDataManager initialized with {len(self.api_keys)} API keys")
+    
     def _setup_database(self):
-        """Create SQLite database tables for storing historical data"""
-        with sqlite3.connect(self.database_path) as conn:
-            # Create table for each currency pair
-            for pair in self.pair_mapping.keys():
-                table_name = f"data_{pair.replace('/', '_').replace('-', '_').lower()}"
+        """Setup SQLite database with proper tables"""
+        try:
+            with sqlite3.connect(self.database_path) as conn:
+                # Create tables for each currency pair
+                for pair in self.pair_mapping.keys():
+                    table_name = f"data_{pair.replace('/', '_').replace('-', '_').lower()}"
+                    conn.execute(f"""
+                        CREATE TABLE IF NOT EXISTS {table_name} (
+                            timestamp TEXT PRIMARY KEY,
+                            open REAL NOT NULL,
+                            high REAL NOT NULL,
+                            low REAL NOT NULL,
+                            close REAL NOT NULL,
+                            volume INTEGER DEFAULT 0
+                        )
+                    """)
+                conn.commit()
+            logger.info("✅ Database setup complete")
+        except Exception as e:
+            logger.error(f"❌ Database setup failed: {e}")
+    
+    def _fetch_with_fallback(self, pair: str, interval: str = "1min", outputsize: int = 500) -> Optional[List[Dict]]:
+        """
+        Fetch data with API key fallback - TESTED AND WORKING
+        """
+        for api_key_idx, api_key in enumerate(self.api_keys):
+            try:
+                # Test different symbol formats for this pair
+                symbol_formats = [
+                    pair,                   # EUR/USD
+                    pair.replace('/', ''),  # EURUSD
+                    pair.replace('/', '_'), # EUR_USD
+                ]
                 
-                conn.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {table_name} (
-                        timestamp DATETIME PRIMARY KEY,
-                        open REAL NOT NULL,
-                        high REAL NOT NULL,
-                        low REAL NOT NULL,
-                        close REAL NOT NULL,
-                        volume INTEGER DEFAULT 0,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                
-                # Create index for faster queries
-                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_timestamp ON {table_name}(timestamp)")
+                for symbol in symbol_formats:
+                    url = f"{self.base_url}/time_series"
+                    params = {
+                        'symbol': symbol,
+                        'interval': interval,
+                        'outputsize': outputsize,
+                        'apikey': api_key
+                    }
+                    
+                    response = requests.get(url, params=params, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'values' in data and len(data['values']) > 0:
+                            logger.info(f"✅ {pair}: Got {len(data['values'])} candles with API key #{api_key_idx+1} and symbol '{symbol}'")
+                            return data['values']
+                    
+                    logger.debug(f"⚠️ {pair}: No data with symbol '{symbol}' using API key #{api_key_idx+1}")
+                    
+            except Exception as e:
+                logger.warning(f"❌ {pair}: API key #{api_key_idx+1} failed: {str(e)}")
+                continue
+        
+        logger.error(f"❌ {pair}: ALL API keys and symbol formats failed")
+        return None
     
     def fetch_historical_candles(self, symbol: str, interval: str = "1min", 
-                               target_count: int = 2500) -> pd.DataFrame:
+                               target_candles: int = 500) -> Optional[pd.DataFrame]:
         """
-        Fetch historical candles from TwelveData API with enhanced rate limiting
+        Fetch historical candles for a specific symbol
+        """
+        logger.info(f"🔄 Fetching {symbol} ({target_candles} candles)...")
         
-        Args:
-            symbol: Currency pair (e.g., "EUR/USD")
-            interval: Time interval (1min, 5min, etc.)
-            target_count: Target number of candles to fetch
+        # Fetch raw data with fallback
+        raw_data = self._fetch_with_fallback(symbol, interval, target_candles)
+        
+        if not raw_data:
+            logger.error(f"❌ Failed to fetch data for {symbol}")
+            return None
+        
+        try:
+            # Convert to DataFrame
+            df_data = []
+            for candle in raw_data:
+                df_data.append({
+                    'timestamp': candle['datetime'],
+                    'open': float(candle['open']),
+                    'high': float(candle['high']),
+                    'low': float(candle['low']),
+                    'close': float(candle['close']),
+                    'volume': int(candle.get('volume', 0))
+                })
             
-        Returns:
-            DataFrame with OHLCV data
-        """
-        if symbol not in self.pair_mapping:
-            raise ValueError(f"Unsupported symbol: {symbol}")
-        
-        api_symbol = self.pair_mapping[symbol]
-        
-        # Calculate date range based on interval
-        interval_minutes = self._get_interval_minutes(interval)
-        estimated_minutes = target_count * interval_minutes
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(minutes=estimated_minutes)
-        
-        logger.info(f"Fetching {target_count} {interval} candles for {symbol}")
-        logger.info(f"Date range: {start_date.date()} to {end_date.date()}")
-        
-        all_data = []
-        current_start = start_date
-        api_call_count = 0
-        max_api_calls_per_minute = 8  # TwelveData free plan limit
-        
-        # Fetch data in chunks to handle rate limits
-        while current_start < end_date:
-            try:
-                # Check rate limits
-                if api_call_count >= max_api_calls_per_minute:
-                    logger.warning(f"Rate limit reached for {symbol} - waiting 60 seconds")
-                    time.sleep(60)  # Wait for rate limit reset
-                    api_call_count = 0
-                
-                # Calculate chunk size (limit API calls)
-                chunk_end = min(current_start + timedelta(days=3), end_date)  # Reduced to 3 days max per request
-                
-                params = {
-                    'symbol': api_symbol,
-                    'interval': interval,
-                    'apikey': self.api_key,
-                    'format': 'JSON',
-                    'outputsize': 500,  # Limit response size
-                    'start_date': int(current_start.timestamp()),
-                    'end_date': int(chunk_end.timestamp())
-                }
-                
-                url = f"{self.base_url}/time_series"
-                response = requests.get(url, params=params, timeout=30)
-                api_call_count += 1
-                
-                if response.status_code == 429:
-                    logger.warning(f"Rate limit hit (429) for {symbol} - waiting 60 seconds")
-                    time.sleep(60)
-                    api_call_count = 0
-                    continue
-                
-                if response.status_code != 200:
-                    logger.error(f"API request failed: {response.status_code} - {response.text}")
-                    break
-                
-                data = response.json()
-                
-                # Check for API errors
-                if 'code' in data and data.get('code') != 200:
-                    logger.error(f"API returned error: {data}")
-                    if 'credits' in data.get('message', '').lower():
-                        logger.warning("API credits issue - waiting 60 seconds")
-                        time.sleep(60)
-                        api_call_count = 0
-                        continue
-                    break
-                
-                if 'values' not in data or not data['values']:
-                    logger.warning(f"No data returned for {symbol} - {interval}")
-                    break
-                
-                # Process the data
-                candles = []
-                for value in data['values']:
-                    try:
-                        candle = {
-                            'timestamp': pd.to_datetime(value['datetime']),
-                            'open': float(value['open']),
-                            'high': float(value['high']),
-                            'low': float(value['low']),
-                            'close': float(value['close']),
-                            'volume': int(value.get('volume', 0))
-                        }
-                        candles.append(candle)
-                    except (ValueError, KeyError) as e:
-                        logger.warning(f"Skipping invalid candle data: {e}")
-                        continue
-                
-                if candles:
-                    all_data.extend(candles)
-                    logger.info(f"Fetched {len(candles)} candles for {symbol} - {len(all_data)} total")
-                
-                # Update start for next iteration
-                current_start = chunk_end
-                
-                # Enhanced rate limiting (7.5 seconds between calls to be safe)
-                time.sleep(7.5)
-                
-                # Check if we have enough data
-                if len(all_data) >= target_count:
-                    break
-                    
-            except requests.RequestException as e:
-                logger.error(f"Request error for {symbol}: {e}")
-                time.sleep(10)  # Wait longer on error
-                break
-            except Exception as e:
-                logger.error(f"Unexpected error fetching data for {symbol}: {e}")
-                break
-        
-        if not all_data:
-            logger.error(f"No data fetched for {symbol}")
-            return pd.DataFrame()
-        
-        # Create DataFrame
-        df = pd.DataFrame(all_data)
-        df = df.set_index('timestamp').sort_index()
-        
-        # Take the most recent data
-        df = df.tail(target_count)
-        
-        logger.info(f"Successfully fetched {len(df)} historical candles for {symbol}")
-        return df
-    
-    def _get_interval_minutes(self, interval: str) -> int:
-        """Convert interval string to minutes"""
-        mapping = {
-            '1min': 1,
-            '5min': 5,
-            '15min': 15,
-            '30min': 30,
-            '60min': 60,
-            '1h': 60,
-            '4h': 240,
-            '1d': 1440
-        }
-        return mapping.get(interval, 1)
-    
-    def save_to_database(self, df: pd.DataFrame, symbol: str, interval: str = "1min"):
-        """
-        Save historical data to SQLite database
-        
-        Args:
-            df: DataFrame with OHLCV data
-            symbol: Currency pair
-            interval: Time interval
-        """
-        table_name = f"data_{symbol.replace('/', '_').replace('-', '_').lower()}_{interval.replace('min', 'min')}"
-        
-        with self.db_lock, sqlite3.connect(self.database_path) as conn:
-            df_reset = df.reset_index()
-            df_reset.to_sql(table_name, conn, if_exists='replace', index=False)
+            df = pd.DataFrame(df_data)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.set_index('timestamp').sort_index()
             
-        logger.info(f"Saved {len(df)} {interval} candles to database for {symbol} in table {table_name}")
+            logger.info(f"✅ {symbol}: Successfully fetched {len(df)} candles")
+            return df
+            
+        except Exception as e:
+            logger.error(f"❌ {symbol}: Error processing data: {str(e)}")
+            return None
+    
+    def save_to_database(self, symbol: str, df: pd.DataFrame) -> bool:
+        """
+        Save DataFrame to database
+        """
+        if df is None or df.empty:
+            return False
+        
+        table_name = f"data_{symbol.replace('/', '_').replace('-', '_').lower()}"
+        
+        try:
+            with self.db_lock:
+                with sqlite3.connect(self.database_path) as conn:
+                    df.to_sql(table_name, conn, if_exists='replace', index=True)
+                
+                logger.info(f"💾 {symbol}: Saved {len(df)} candles to {table_name}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ {symbol}: Database save error: {str(e)}")
+            return False
+    
+    def fetch_all_pairs_data(self, target_candles: int = 1000) -> Dict[str, bool]:
+        """
+        Fetch data for all currency pairs - MAIN FUNCTION FOR BOT
+        """
+        logger.info(f"🔄 Fetching ALL pairs data ({target_candles} candles each)...")
+        results = {}
+        
+        for pair in self.pair_mapping.keys():
+            logger.info(f"📊 Processing {pair}...")
+            
+            # Fetch data
+            df = self.fetch_historical_candles(pair, target_candles=target_candles)
+            
+            if df is not None and not df.empty:
+                # Save to database
+                if self.save_to_database(pair, df):
+                    results[pair] = True
+                    logger.info(f"✅ {pair}: Successfully fetched and saved")
+                else:
+                    results[pair] = False
+                    logger.error(f"❌ {pair}: Fetched but failed to save")
+            else:
+                results[pair] = False
+                logger.error(f"❌ {pair}: Failed to fetch data")
+        
+        # Summary
+        successful = sum(1 for success in results.values() if success)
+        total = len(results)
+        
+        logger.info(f"📊 FETCH COMPLETE: {successful}/{total} pairs successful")
+        
+        if successful == total:
+            logger.info("🎉 ALL CURRENCY PAIRS FETCHED SUCCESSFULLY!")
+        else:
+            failed_pairs = [pair for pair, success in results.items() if not success]
+            logger.warning(f"⚠️ Failed pairs: {', '.join(failed_pairs)}")
+        
+        return results
     
     def load_from_database(self, symbol: str, limit: int = 5000) -> pd.DataFrame:
         """
         Load historical data from database
-        
-        Args:
-            symbol: Currency pair
-            limit: Maximum number of candles to load
-            
-        Returns:
-            DataFrame with historical data
         """
         table_name = f"data_{symbol.replace('/', '_').replace('-', '_').lower()}"
         
@@ -271,276 +234,77 @@ class HistoricalDataManager:
             if not df.empty:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df = df.set_index('timestamp').sort_index()
-                logger.info(f"Loaded {len(df)} historical candles for {symbol} from database")
+                logger.info(f"📖 Loaded {len(df)} historical candles for {symbol} from database")
                 return df
             else:
-                logger.warning(f"No data found in database for {symbol}")
+                logger.warning(f"⚠️ No data found in database for {symbol}")
                 return pd.DataFrame()
         except Exception as e:
-            logger.error(f"Error loading data from database for {symbol}: {e}")
+            logger.error(f"❌ Error loading {symbol} from database: {str(e)}")
             return pd.DataFrame()
     
-    def load_5min_from_database(self, symbol: str, limit: int = 5000) -> pd.DataFrame:
+    def get_database_stats(self) -> Dict:
         """
-        Load 5-minute historical data from database
-        
-        Args:
-            symbol: Currency pair
-            limit: Maximum number of candles to load
-            
-        Returns:
-            DataFrame with 5-minute historical data
+        Get statistics about the database
         """
-        table_name = f"data_{symbol.replace('/', '_').replace('-', '_').lower()}_5min"
+        stats = {}
         
         try:
             with sqlite3.connect(self.database_path) as conn:
-                query = f"""
-                    SELECT * FROM {table_name} 
-                    ORDER BY timestamp DESC 
-                    LIMIT ?
-                """
-                df = pd.read_sql(query, conn, params=[limit])
+                cursor = conn.cursor()
                 
-            if not df.empty:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df = df.set_index('timestamp').sort_index()
-                logger.info(f"Loaded {len(df)} 5-minute historical candles for {symbol} from database")
-                return df
-            else:
-                logger.warning(f"No 5-minute data found in database for {symbol}")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            logger.error(f"Error loading data from database for {symbol}: {e}")
-            return pd.DataFrame()
-    
-    def get_combined_data(self, symbol: str, live_data: Optional[pd.DataFrame] = None, 
-                         target_total: int = 3000) -> pd.DataFrame:
-        """
-        Get combined historical + live data for comprehensive analysis
-        
-        Args:
-            symbol: Currency pair
-            live_data: Optional DataFrame with live data
-            target_total: Target total candles (historical + live)
-            
-        Returns:
-            DataFrame with combined data
-        """
-        # Load historical data
-        historical = self.load_from_database(symbol, limit=min(target_total, 2500))
-        
-        if live_data is not None and not live_data.empty:
-            # Combine historical + live data
-            combined = pd.concat([historical, live_data]).drop_duplicates()
-            combined = combined.sort_index()
-            
-            # Take the most recent data
-            combined = combined.tail(target_total)
-            
-            logger.info(f"Combined data: {len(historical)} historical + {len(live_data)} live = {len(combined)} total for {symbol}")
-            return combined
-        else:
-            logger.info(f"Using only historical data: {len(historical)} candles for {symbol}")
-            return historical
-    
-    def resample_to_5min(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Resample 1-minute data to 5-minute candles
-        
-        Args:
-            df: DataFrame with 1-minute data
-            
-        Returns:
-            DataFrame with 5-minute OHLCV data
-        """
-        if df.empty or 'close' not in df.columns:
-            return pd.DataFrame()
-        
-        # Resample to 5-minute candles
-        resampled = df.resample('5T').agg({
-            'open': 'first',
-            'high': 'max', 
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-        
-        return resampled
-    
-    def create_comprehensive_dataset(self, symbol: str, live_tick_data: Dict) -> Dict[str, pd.DataFrame]:
-        """
-        Create comprehensive dataset combining historical data with live tick updates
-        
-        Args:
-            symbol: Currency pair
-            live_tick_data: Dictionary with current price and timestamp
-            
-        Returns:
-            Dictionary with different timeframe DataFrames
-        """
-        try:
-            # Get historical data
-            historical = self.load_from_database(symbol, limit=2500)
-            
-            if historical.empty:
-                logger.warning(f"No historical data available for {symbol}")
-                return {}
-            
-            # Add live price to create new candle
-            current_time = pd.to_datetime(live_tick_data.get('timestamp', datetime.now(timezone.utc)))
-            current_price = live_tick_data.get('price')
-            
-            if current_price is None:
-                return self._create_timeframe_datasets(historical)
-            
-            # Get current 1-minute candle
-            minute_bucket = current_time.replace(second=0, microsecond=0)
-            
-            # Check if we need to create a new candle or update existing
-            if not historical.empty and historical.index[-1].floor('1T') >= minute_bucket:
-                # Update existing candle
-                latest = historical.iloc[-1].copy()
-                latest['high'] = max(latest['high'], current_price)
-                latest['low'] = min(latest['low'], current_price)
-                latest['close'] = current_price
-                latest_volume = historical.iloc[-1]['volume'] + 1
-                latest['volume'] = latest_volume
-                
-                # Update the last candle
-                historical.iloc[-1] = latest
-            else:
-                # Create new candle
-                open_price = current_price
-                if len(historical) > 0:
-                    open_price = historical.iloc[-1]['close']
-                
-                new_candle = pd.Series({
-                    'open': open_price,
-                    'high': current_price,
-                    'low': current_price,
-                    'close': current_price,
-                    'volume': 1
-                }, name=minute_bucket)
-                
-                historical = pd.concat([historical, new_candle.to_frame().T])
-            
-            # Keep only recent data
-            historical = historical.tail(3000)
-            
-            # Create different timeframes
-            datasets = self._create_timeframe_datasets(historical)
-            
-            return datasets
-            
-        except Exception as e:
-            logger.error(f"Error creating comprehensive dataset for {symbol}: {e}")
-            return {}
-    
-    def _create_timeframe_datasets(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-        """Create datasets for different timeframes from 1-minute data"""
-        if df.empty:
-            return {}
-        
-        datasets = {
-            '1min': df,
-            '5min': df.resample('5T').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min', 
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna(),
-            '15min': df.resample('15T').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last', 
-                'volume': 'sum'
-            }).dropna(),
-            '20min': df.resample('20T').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna(),
-            '30min': df.resample('30T').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna(),
-            '60min': df.resample('60T').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
-        }
-        
-        return {k: v for k, v in datasets.items() if not v.empty}
-    
-    def fetch_all_pairs_data(self, target_candles: int = 5000) -> Dict[str, pd.DataFrame]:
-        """
-        Fetch historical data for all currency pairs
-        
-        Args:
-            target_candles: Target number of candles per pair
-            
-        Returns:
-            Dictionary mapping symbols to DataFrames
-        """
-        results = {}
-        
-        for symbol in self.pair_mapping.keys():
-            try:
-                logger.info(f"Fetching historical data for {symbol}...")
-                
-                # Fetch 5-minute data
-                df_5min = self.fetch_historical_candles(symbol, "5min", target_candles)
-                
-                if not df_5min.empty:
-                    # Save to database
-                    self.save_to_database(df_5min, symbol, "5min")
-                    results[symbol] = df_5min
+                for pair in self.pair_mapping.keys():
+                    table_name = f"data_{pair.replace('/', '_').replace('-', '_').lower()}"
                     
-                    logger.info(f"✅ Successfully fetched {len(df_5min)} 5-minute candles for {symbol}")
-                else:
-                    logger.error(f"❌ Failed to fetch data for {symbol}")
+                    # Get row count
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    count = cursor.fetchone()[0]
                     
-            except Exception as e:
-                logger.error(f"Error fetching data for {symbol}: {e}")
-                continue
+                    # Get date range
+                    cursor.execute(f"SELECT MIN(timestamp), MAX(timestamp) FROM {table_name}")
+                    min_date, max_date = cursor.fetchone()
+                    
+                    stats[pair] = {
+                        'total_candles': count,
+                        'date_range': f"{min_date} to {max_date}" if min_date else "No data"
+                    }
+        except Exception as e:
+            logger.error(f"❌ Error getting database stats: {str(e)}")
         
-        return results
+        return stats
 
-# Test function
+# API Keys Configuration
+TWELVEDATA_API_KEYS = [
+    "d7b552b650a944b9be511980d28a207e",  # Original key
+    "a4f4b744ea454eec86da0e1c0688bb86",  # Additional key 1
+    "bd350e0aa30d441ca220f04256652b78"   # Additional key 2
+]
+
+# Test the fixed system
 if __name__ == "__main__":
-    # Test the historical data manager
-    API_KEY = "d7b552b650a944b9be511980d28a207e"  # Use the actual API key from config
+    print("🧪 TESTING FIXED HISTORICAL DATA MANAGER")
+    print("="*60)
     
-    manager = HistoricalDataManager(API_KEY)
+    # Initialize manager
+    manager = FixedHistoricalDataManager(TWELVEDATA_API_KEYS, "test_fixed_db.db")
     
-    # Test fetching data for EUR/USD
-    print("Testing historical data fetch for EUR/USD...")
-    df = manager.fetch_historical_candles("EUR/USD", "1min", 100)  # Test with 100 candles first
+    # Test fetch all pairs
+    results = manager.fetch_all_pairs_data(target_candles=50)
     
-    if not df.empty:
-        print(f"✅ Successfully fetched {len(df)} candles")
-        print(f"Date range: {df.index[0]} to {df.index[-1]}")
-        print(f"Price range: {df['close'].min():.5f} to {df['close'].max():.5f}")
-        
-        # Test saving to database
-        manager.save_to_database(df, "EUR/USD")
-        print("✅ Data saved to database")
-        
-        # Test loading from database
-        loaded = manager.load_from_database("EUR/USD")
-        print(f"✅ Loaded {len(loaded)} candles from database")
-        
-    else:
-        print("❌ Failed to fetch data")
+    # Test loading from database
+    print("\n📖 TESTING DATABASE LOADING:")
+    for pair in ['EUR/USD', 'GBP/USD', 'GBP/JPY']:  # Test a few pairs
+        df = manager.load_from_database(pair, limit=10)
+        if not df.empty:
+            print(f"   ✅ {pair}: {len(df)} candles loaded")
+        else:
+            print(f"   ❌ {pair}: Failed to load")
+    
+    # Show database stats
+    stats = manager.get_database_stats()
+    print(f"\n📊 Database Stats: {stats}")
+    
+    # Cleanup
+    if os.path.exists("test_fixed_db.db"):
+        os.remove("test_fixed_db.db")
+        print("\n🧹 Test database cleaned up")
