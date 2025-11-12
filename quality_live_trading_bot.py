@@ -451,7 +451,8 @@ The bot will now:
         except Exception as e:
             logger.error(f"❌ Error sending signal: {e}")
 
-class FixedQualityTradingBot:
+# CHANGE: Class name changed from FixedQualityTradingBot to QualityTradingBot for main.py compatibility
+class QualityTradingBot:
     """Fixed Quality Trading Bot with proper data fetching"""
     
     def __init__(self):
@@ -677,7 +678,7 @@ class FixedQualityTradingBot:
     
     def run(self):
         """Main execution method"""
-        print("🎯 FIXED QUALITY LIVE TRADING BOT")
+        print("🎯 QUALITY LIVE TRADING BOT - FIXED VERSION")
         print("="*80)
         print("✅ FIXED: Multiple API keys with fallback")
         print("✅ FIXED: Proper historical data fetching")
@@ -713,7 +714,7 @@ class FixedQualityTradingBot:
 
 def main():
     """Main entry point"""
-    bot = FixedQualityTradingBot()
+    bot = QualityTradingBot()
     bot.run()
 
 if __name__ == "__main__":
