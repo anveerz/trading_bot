@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-FIXED ENHANCED TRADING BOT WITH TELEGRAM ERROR HANDLING
-Fixed Telegram 400 errors and improved message formatting
+FINAL FIXED TRADING BOT - ZERO MARKDOWN ISSUES
+Uses ONLY plain text with safe ASCII characters to eliminate Telegram 400 errors
 """
 
 import websocket
@@ -132,7 +132,7 @@ class QualitySignal:
         return asdict(self)
 
 class TelegramNotifier:
-    """FIXED Telegram notification system with error handling"""
+    """FINAL FIXED Telegram notification system with ZERO markdown issues"""
     
     def __init__(self, bot_token: str, chat_id: str):
         self.bot_token = bot_token
@@ -142,120 +142,111 @@ class TelegramNotifier:
     def send_startup_message(self):
         """Send startup notification to Telegram"""
         try:
-            startup_message = f"""🚀 Enhanced Trading Bot Started Successfully
+            # PLAIN TEXT ONLY - NO MARKDOWN
+            startup_message = f"""Enhanced Trading Bot Started Successfully
 
-🕐 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📊 Pairs: 7 currency pairs ready
-🎯 Platform: Railway Cloud
-✅ Features: Signal tracking + Performance monitoring
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Pairs: 7 currency pairs ready
+Platform: Railway Cloud
+Features: Signal tracking + Performance monitoring
 
 The bot will now:
-• Monitor all 7 currency pairs
-• Generate optimized signals 
-• Track signal performance in real-time
-• Calculate win rates and statistics
-• Send immediate results after signal expiry
-• Provide session performance reports
+- Monitor all 7 currency pairs
+- Generate optimized signals 
+- Track signal performance in real-time
+- Calculate win rates and statistics
+- Send immediate results after signal expiry
+- Provide session performance reports
 
-🔄 Ready for enhanced live trading!"""
+Ready for enhanced live trading!"""
 
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 data={
                     'chat_id': TELEGRAM_CHAT_ID,
-                    'text': startup_message,
-                    'parse_mode': 'Markdown'
+                    'text': startup_message
+                    # NO parse_mode - sending as plain text
                 },
                 timeout=10
             )
             if response.status_code == 200:
-                logger.info("📱 Startup notification sent to Telegram")
+                logger.info("Startup notification sent to Telegram")
             else:
-                logger.error(f"❌ Telegram startup error: {response.status_code}")
+                logger.error(f"Telegram startup error: {response.status_code}")
         except Exception as e:
-            logger.error(f"❌ Telegram startup failed: {e}")
+            logger.error(f"Telegram startup failed: {e}")
     
     def send_signal(self, signal: QualitySignal):
-        """Send signal notification to Telegram - FIXED VERSION"""
+        """Send signal notification to Telegram - FINAL FIX"""
         try:
-            direction_emoji = "↗️" if signal.signal_type == "UP" else "↘️"
-            direction_color = "🟢" if signal.signal_type == "UP" else "🔴"
+            direction_text = "UP" if signal.signal_type == "UP" else "DOWN"
             
-            # FIXED: Simplified message format to avoid 400 errors
-            signal_message = f"""🎯 TRADING SIGNAL
-══════════════════════
-🏷️ {signal.pair}
-⏰ {signal.timeframe}
-{direction_color} DIRECTION: {signal.signal_type} {direction_emoji}
-💰 Entry Price: {signal.entry_price:.5f}
-🕐 Signal Time: {signal.timestamp.strftime('%H:%M:%S')}
-📊 Quality: Quality Signal ({signal.confidence:.0f}%)
-🆔 {signal.signal_id}
+            # PLAIN TEXT ONLY - ABSOLUTELY NO MARKDOWN
+            signal_message = f"""NEW TRADING SIGNAL
 
-⏳ Note: Result will be delivered after signal expires"""
+Pair: {signal.pair}
+Timeframe: {signal.timeframe}
+Direction: {direction_text}
+Entry Price: {signal.entry_price:.5f}
+Signal Time: {signal.timestamp.strftime('%H:%M:%S')}
+Quality: {signal.confidence:.0%}
+Signal ID: {signal.signal_id}
+
+Note: Result will be delivered after signal expires"""
 
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 data={
                     'chat_id': TELEGRAM_CHAT_ID,
-                    'text': signal_message,
-                    'parse_mode': 'Markdown'
+                    'text': signal_message
+                    # NO parse_mode - sending as plain text
                 },
                 timeout=10
             )
             if response.status_code == 200:
-                logger.info(f"✅ Signal sent: {signal.pair} {signal.signal_type} - {signal.signal_id}")
+                logger.info(f"Signal sent: {signal.pair} {signal.signal_type} - {signal.signal_id}")
             else:
-                logger.error(f"❌ Telegram signal error: {response.status_code}")
-                # Log response for debugging
-                logger.error(f"❌ Telegram response: {response.text}")
+                logger.error(f"Telegram signal error: {response.status_code}")
+                logger.error(f"Telegram response: {response.text}")
         except Exception as e:
-            logger.error(f"❌ Signal send failed: {e}")
+            logger.error(f"Signal send failed: {e}")
     
     def send_signal_result(self, signal: QualitySignal, session_stats: SessionStats):
-        """Send immediate signal result notification - FIXED VERSION"""
+        """Send immediate signal result notification - FINAL FIX"""
         try:
-            if signal.status == 'WIN':
-                result_emoji = "🎉"
-                result_color = "🟢"
-                result_text = "WIN"
-            else:
-                result_emoji = "💔"
-                result_color = "🔴"
-                result_text = "LOSS"
+            result_text = "WIN" if signal.status == 'WIN' else "LOSS"
+            pips_text = f"{signal.result_pips:.1f}"
             
-            pips_emoji = "📈" if signal.result_pips > 0 else "📉"
-            
-            # FIXED: Simplified format to avoid 400 errors
-            result_message = f"""🎯 SIGNAL RESULT
-══════════════════════
-🏷️ {signal.pair} - {signal.signal_id}
-{result_emoji} RESULT: {result_color} {result_text}
-{pips_emoji} Pips: {signal.result_pips:.1f}
-💰 Entry: {signal.entry_price:.5f}
-💰 Exit: {signal.exit_price:.5f}
-⏰ Duration: {signal.timeframe}
+            # PLAIN TEXT ONLY - ABSOLUTELY NO MARKDOWN
+            result_message = f"""SIGNAL RESULT
 
-📊 UPDATED SESSION STATS:
-• Total Signals: {session_stats.total_signals}
-• Win Rate: {session_stats.get_win_rate():.1f}%
-• Pair Performance: {session_stats.get_pair_win_rate(signal.pair):.1f}% ({signal.pair})"""
+Pair: {signal.pair} - {signal.signal_id}
+Result: {result_text}
+Pips: {pips_text}
+Entry: {signal.entry_price:.5f}
+Exit: {signal.exit_price:.5f}
+Duration: {signal.timeframe}
+
+UPDATED SESSION STATS:
+Total Signals: {session_stats.total_signals}
+Win Rate: {session_stats.get_win_rate():.1f}%
+Pair Performance: {session_stats.get_pair_win_rate(signal.pair):.1f}% ({signal.pair})"""
 
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 data={
                     'chat_id': TELEGRAM_CHAT_ID,
-                    'text': result_message,
-                    'parse_mode': 'Markdown'
+                    'text': result_message
+                    # NO parse_mode - sending as plain text
                 },
                 timeout=10
             )
             if response.status_code == 200:
-                logger.info(f"✅ Result sent: {signal.pair} {signal.status} - {signal.signal_id}")
+                logger.info(f"Result sent: {signal.pair} {signal.status} - {signal.signal_id}")
             else:
-                logger.error(f"❌ Telegram result error: {response.status_code}")
+                logger.error(f"Telegram result error: {response.status_code}")
         except Exception as e:
-            logger.error(f"❌ Result send failed: {e}")
+            logger.error(f"Result send failed: {e}")
 
 class EnhancedSignalTracker:
     """Signal tracking and performance monitoring system"""
@@ -319,10 +310,10 @@ class EnhancedSignalTracker:
                         # Remove from active signals
                         del historical_manager.active_signals[pair]
                         
-                        logger.info(f"🎯 SIGNAL COMPLETED: {pair} {result} ({signal.result_pips:.1f} pips)")
+                        logger.info(f"SIGNAL COMPLETED: {pair} {result} ({signal.result_pips:.1f} pips)")
                         
                 except Exception as e:
-                    logger.error(f"❌ Error processing expired signal {pair}: {e}")
+                    logger.error(f"Error processing expired signal {pair}: {e}")
 
 # === FIXED HISTORICAL DATA MANAGER ===
 class FixedHistoricalDataManager:
@@ -349,7 +340,7 @@ class FixedHistoricalDataManager:
         self.db_lock = threading.Lock()
         self._setup_database()
         
-        logger.info(f"✅ FixedHistoricalDataManager initialized with {len(self.api_keys)} API keys")
+        logger.info(f"FixedHistoricalDataManager initialized with {len(self.api_keys)} API keys")
     
     def get_latest_price(self, pair: str) -> Optional[Dict]:
         """Get the latest price data for a pair"""
@@ -373,7 +364,7 @@ class FixedHistoricalDataManager:
                         'volume': result[5]
                     }
         except Exception as e:
-            logger.error(f"❌ Error getting latest price for {pair}: {e}")
+            logger.error(f"Error getting latest price for {pair}: {e}")
         return None
     
     def _setup_database(self):
@@ -393,9 +384,9 @@ class FixedHistoricalDataManager:
                         )
                     """)
                 conn.commit()
-            logger.info("✅ Database setup complete")
+            logger.info("Database setup complete")
         except Exception as e:
-            logger.error(f"❌ Database setup failed: {e}")
+            logger.error(f"Database setup failed: {e}")
     
     def _fetch_with_fallback(self, pair: str, interval: str = "1min", outputsize: int = 500) -> Optional[List[Dict]]:
         """Fetch data with API key fallback - TESTED AND WORKING"""
@@ -424,20 +415,20 @@ class FixedHistoricalDataManager:
                     # Check for successful response
                     if data.get('status') == 'ok' and 'values' in data:
                         candles = data['values']
-                        logger.info(f"✅ {pair}: Got {len(candles)} candles with API key #{api_key_idx+1}")
+                        logger.info(f"{pair}: Got {len(candles)} candles with API key #{api_key_idx+1}")
                         return candles
                     elif 'message' in data:
-                        logger.warning(f"⚠️ {pair} with {symbol}: {data['message']}")
+                        logger.warning(f"{pair} with {symbol}: {data['message']}")
                         continue
                         
             except requests.exceptions.RequestException as e:
-                logger.warning(f"⚠️ API key #{api_key_idx+1} failed for {pair}: {e}")
+                logger.warning(f"API key #{api_key_idx+1} failed for {pair}: {e}")
                 continue
             except Exception as e:
-                logger.warning(f"⚠️ Error with {pair}: {e}")
+                logger.warning(f"Error with {pair}: {e}")
                 continue
         
-        logger.error(f"❌ All API keys failed for {pair}")
+        logger.error(f"All API keys failed for {pair}")
         return None
     
     def fetch_and_store_data(self, pair: str, interval: str = "1min", outputsize: int = 1000) -> bool:
@@ -465,11 +456,11 @@ class FixedHistoricalDataManager:
                             int(candle.get('volume', 0))
                         ))
             
-            logger.info(f"✅ {pair}: Successfully fetched and stored {len(candles)} candles")
+            logger.info(f"{pair}: Successfully fetched and stored {len(candles)} candles")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to fetch/store {pair}: {e}")
+            logger.error(f"Failed to fetch/store {pair}: {e}")
             return False
     
     def get_historical_data(self, pair: str, limit: int = 100) -> Optional[pd.DataFrame]:
@@ -492,26 +483,26 @@ class FixedHistoricalDataManager:
                     
                 return df
         except Exception as e:
-            logger.error(f"❌ Error getting historical data for {pair}: {e}")
+            logger.error(f"Error getting historical data for {pair}: {e}")
             return None
     
     def fetch_initial_data(self):
         """Fetch initial data for all pairs"""
-        logger.info(f"🔄 Fetching ALL pairs data (1000 candles each)...")
+        logger.info(f"Fetching ALL pairs data (1000 candles each)...")
         
         success_count = 0
         for pair in self.pair_mapping.keys():
-            logger.info(f"📊 Processing {pair}...")
+            logger.info(f"Processing {pair}...")
             if self.fetch_and_store_data(pair, "1min", 1000):
                 success_count += 1
         
-        logger.info(f"📊 FETCH COMPLETE: {success_count}/{len(self.pair_mapping)} pairs successful")
+        logger.info(f"FETCH COMPLETE: {success_count}/{len(self.pair_mapping)} pairs successful")
         
         if success_count == len(self.pair_mapping):
-            logger.info("🎉 ALL CURRENCY PAIRS FETCHED SUCCESSFULLY!")
+            logger.info("ALL CURRENCY PAIRS FETCHED SUCCESSFULLY!")
             return True
         else:
-            logger.warning(f"⚠️ Only {success_count}/{len(self.pair_mapping)} pairs fetched successfully")
+            logger.warning(f"Only {success_count}/{len(self.pair_mapping)} pairs fetched successfully")
             return False
 
 class OptimizedSignalGenerator:
@@ -598,7 +589,7 @@ class OptimizedSignalGenerator:
             return None
             
         except Exception as e:
-            logger.error(f"❌ Signal generation error for {pair}: {e}")
+            logger.error(f"Signal generation error for {pair}: {e}")
             return None
     
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> Optional[float]:
@@ -644,43 +635,43 @@ class QualityTradingBot:
         self.running = False
         self.signal_counter = 0
         
-        logger.info("✅ Enhanced Trading Bot initialized")
+        logger.info("Enhanced Trading Bot initialized")
     
     def _send_startup_notification(self):
         """Send startup notification"""
         self.telegram.send_startup_message()
-        logger.info("📱 Startup notification sent to Telegram")
+        logger.info("Startup notification sent to Telegram")
     
     def _fetch_initial_historical_data(self):
         """Fetch initial historical data"""
-        logger.info("🔄 Fetching initial historical data from TwelveData API...")
+        logger.info("Fetching initial historical data from TwelveData API...")
         success = self.historical_manager.fetch_initial_data()
         
         if not success:
             raise Exception("Failed to fetch initial data")
         
-        logger.info("✅ Historical data fetched successfully for all pairs")
+        logger.info("Historical data fetched successfully for all pairs")
     
     def run_complete_analysis(self):
         """Run complete analysis cycle"""
-        logger.info("🔍 Starting complete analysis (Steps 1-5)...")
+        logger.info("Starting complete analysis (Steps 1-5)...")
         
         try:
             # Step 1: Historical data loaded
-            logger.info("✅ Step 1: Historical data loaded")
+            logger.info("Step 1: Historical data loaded")
             
             # Steps 2-5: Analysis complete (using optimized default timeframes)
-            logger.info("✅ Step 2-5: Analysis complete (using optimized default timeframes)")
+            logger.info("Step 2-5: Analysis complete (using optimized default timeframes)")
             
         except Exception as e:
-            logger.error(f"❌ Analysis error: {e}")
+            logger.error(f"Analysis error: {e}")
             raise
     
     def start_live_trading(self):
         """Start live trading with enhanced monitoring"""
-        logger.info("🚀 Starting live trading (Steps 6-15)...")
-        logger.info("✅ Step 6: WebSocket data ready")
-        logger.info("✅ Steps 7-8: Candle data structures initialized")
+        logger.info("Starting live trading (Steps 6-15)...")
+        logger.info("Step 6: WebSocket data ready")
+        logger.info("Steps 7-8: Candle data structures initialized")
         
         self.running = True
         
@@ -688,9 +679,9 @@ class QualityTradingBot:
         verification_thread = threading.Thread(target=self._verify_signals_loop, daemon=True)
         verification_thread.start()
         
-        logger.info("🔄 Starting main trading loop...")
-        print(f"📍 Running in: {os.getcwd()}")
-        print(f"🐍 Python version: {sys.version}")
+        logger.info("Starting main trading loop...")
+        print(f"Running in: {os.getcwd()}")
+        print(f"Python version: {sys.version}")
         
         # Main trading loop
         while self.running:
@@ -702,7 +693,7 @@ class QualityTradingBot:
                 time.sleep(60)  # Check every minute
                 
             except Exception as e:
-                logger.error(f"❌ Trading loop error: {e}")
+                logger.error(f"Trading loop error: {e}")
                 time.sleep(10)
     
     def _verify_signals_loop(self):
@@ -728,7 +719,7 @@ class QualityTradingBot:
                 time.sleep(30)
                 
             except Exception as e:
-                logger.error(f"❌ Signal verification error: {e}")
+                logger.error(f"Signal verification error: {e}")
                 time.sleep(30)
     
     def _generate_signals(self):
@@ -769,8 +760,8 @@ class QualityTradingBot:
                     # Mark as active
                     self.historical_manager.active_signals[pair] = quality_signal
                     
-                    logger.info(f"🎯 NEW SIGNAL: {pair} {signal['type']} @ {signal['price']:.5f} ({self.timeframe}) - Confidence: {signal['confidence']:.0%}")
-                    logger.info(f"⏰ Signal expires at: {quality_signal.expiry_time.strftime('%H:%M:%S')}")
+                    logger.info(f"NEW SIGNAL: {pair} {signal['type']} @ {signal['price']:.5f} ({self.timeframe}) - Confidence: {signal['confidence']:.0%}")
+                    logger.info(f"Signal expires at: {quality_signal.expiry_time.strftime('%H:%M:%S')}")
                     
                     # Send to Telegram
                     self.telegram.send_signal(quality_signal)
@@ -783,18 +774,18 @@ class QualityTradingBot:
                 time.sleep(2)
                 
         except Exception as e:
-            logger.error(f"❌ Signal generation error: {e}")
+            logger.error(f"Signal generation error: {e}")
     
     def run(self):
         """Main execution method"""
-        print("🎯 ENHANCED QUALITY TRADING BOT - FIXED")
+        print("ENHANCED QUALITY TRADING BOT - FINAL FIX")
         print("="*80)
-        print("✅ Signal tracking and performance monitoring")
-        print("✅ Real-time win rate calculation") 
-        print("✅ Per-pair performance metrics")
-        print("✅ Immediate result notifications")
-        print("✅ Multiple API keys with fallback")
-        print("✅ FIXED Telegram 400 errors")
+        print("Signal tracking and performance monitoring")
+        print("Real-time win rate calculation") 
+        print("Per-pair performance metrics")
+        print("Immediate result notifications")
+        print("Multiple API keys with fallback")
+        print("FINAL FIX: Zero Telegram markdown issues")
         print("="*80)
         
         try:
@@ -811,16 +802,16 @@ class QualityTradingBot:
             self.start_live_trading()
             
         except KeyboardInterrupt:
-            logger.info("🛑 Bot stopped by user")
+            logger.info("Bot stopped by user")
         except Exception as e:
-            logger.error(f"❌ Bot error: {e}")
+            logger.error(f"Bot error: {e}")
         finally:
             self.cleanup()
     
     def cleanup(self):
         """Cleanup resources"""
         self.running = False
-        logger.info("🧹 Cleanup complete")
+        logger.info("Cleanup complete")
 
 # Environment variables (use these in production)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8042057681:AAF-Kl11H2tw7DY-SoOu4Kbac5pHb5ySAjE')
