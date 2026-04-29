@@ -1,0 +1,34 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# Secrets and credentials
+secrets.json
+config.local.json
+*.key
+*.pem
+*.p8
+credentials.json
+
+# IDE and system files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+node_modules/
+__pycache__/
+
+# Dependencies
+venv/
+env/
+
+# Database files
+*.db
+*.sqlite
+
+# Logs
+*.log
+logs/
